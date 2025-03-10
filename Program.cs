@@ -282,7 +282,7 @@ namespace IngameScript
                     }
 
                     // Iterate through MotorStators:LandingGear Map and check if any of the landingGears are locked. If not: Move the guns.
-                    foreach(IMyMotorStator motorStator in MotorStatorsNear)
+                    foreach (IMyMotorStator motorStator in MotorStatorsNear)
                     {
 
                         if (NearMotorToLandingGearMap.ContainsKey(motorStator) &&
@@ -348,7 +348,7 @@ namespace IngameScript
                         }
 
                         // Begin Far MotorStator movement:
-                        if (FarMotorToLandingGearMap.ContainsKey(MotorStatorsNearFarMap[motorStator]) && 
+                        if (FarMotorToLandingGearMap.ContainsKey(MotorStatorsNearFarMap[motorStator]) &&
                             FarMotorToLandingGearMap[MotorStatorsNearFarMap[motorStator]].Any(landingGear => landingGear.IsLocked == false))
                         {
 
@@ -459,12 +459,31 @@ namespace IngameScript
                     {
                         motorStator.RotorLock = false;
 
-                        if (NearMotorToLandingGearMap.ContainsKey(motorStator) && 
-                            NearMotorToLandingGearMap[motorStator].Any(landingGear => landingGear.IsLocked == true))
+                        if (VerboseMode)
+                        {
+                            ReportError($"UnStow MotorStatorsNear Iteration: {motorStator.CustomName}\n", true, false);
+                        }
+
+                        if (VerboseMode)
+                        {
+                            ReportError($"UnStow NEAR Guard conditions met?\n" +
+                                $"-----\n" +
+                                $"(NearMotorToLandingGearMap.ContainsKey(motorStator): {(NearMotorToLandingGearMap.ContainsKey(motorStator))}\n" +
+                                $"NearMotorToLandingGearMap[motorStator].Any(landingGear => landingGear.IsLocked == true): {(NearMotorToLandingGearMap.ContainsKey(motorStator) ? NearMotorToLandingGearMap[motorStator].Any(landingGear => landingGear.IsLocked == true) : false)}\n" +
+                                $"motorStator.Angle != 0: {(motorStator.Angle != 0)}\n" +
+                                $"-----\n\n"
+                                , true, false);
+                        }
+
+                        // Begin Near MotorStator movement:
+                        if (NearMotorToLandingGearMap.ContainsKey(motorStator) &&
+                             (NearMotorToLandingGearMap[motorStator].Any(landingGear => landingGear.IsLocked == true) ||
+                              motorStator.Angle != 0)
+                            )
                         {
                             if (VerboseMode)
                             {
-                                Echo($"Moving MotorStator: {motorStator.CustomName} due to no locked landing gear!\n");
+                                ReportError($"Unstowing MotorStator: {motorStator.CustomName}!\n", true, false);
                             }
 
                             // Iterate through the landing gears and make sure autolock is on!
@@ -481,6 +500,7 @@ namespace IngameScript
                                     case MotorStatorTypeEnum.Hinge:
 
                                         motorStator.RotorLock = false;
+                                        motorStator.Displacement = 0;
 
                                         if (!MotorStatorToUnStowMovement1DEnumMap[motorStator].MoveNext())
                                         {
@@ -489,6 +509,7 @@ namespace IngameScript
                                     case MotorStatorTypeEnum.Rotor:
 
                                         motorStator.RotorLock = false;
+                                        motorStator.Displacement = 0;
 
                                         if (!MotorStatorToUnStowMovement1DEnumMap[motorStator].MoveNext())
                                         {
@@ -497,6 +518,7 @@ namespace IngameScript
                                     case MotorStatorTypeEnum.AdvancedRotor:
 
                                         motorStator.RotorLock = false;
+                                        motorStator.Displacement = 0;
 
                                         if (!MotorStatorToUnStowMovement1DEnumMap[motorStator].MoveNext())
                                         {
@@ -510,25 +532,43 @@ namespace IngameScript
                             }
                         }
 
+
+                        if (VerboseMode)
+                        {
+                            ReportError($"UnStow FAR Guard conditions met?\n" +
+                                $"-----\n" +
+                                $"(MotorStatorsNearFarMap.ContainsKey(motorStator): {(MotorStatorsNearFarMap.ContainsKey(motorStator))}\n" +
+                                $"FarMotorToLandingGearMap.ContainsKey(MotorStatorsNearFarMap[motorStator]: {FarMotorToLandingGearMap.ContainsKey(MotorStatorsNearFarMap[motorStator])}\n" +
+                                $"FarMotorToLandingGearMap[MotorStatorsNearFarMap[motorStator]].Any(landingGear => landingGear.IsLocked == true): {(FarMotorToLandingGearMap.ContainsKey(MotorStatorsNearFarMap[motorStator]) ? FarMotorToLandingGearMap[MotorStatorsNearFarMap[motorStator]].Any(landingGear => landingGear.IsLocked == true) : false)}\n" +
+                                $"MotorStatorsNearFarMap[motorStator].Angle != 0: {MotorStatorsNearFarMap[motorStator].Angle != 0}\n" +
+                                $"-----\n\n"
+
+                                , true, false);
+                        }
+
                         // Begin Far MotorStator movement:
-                        if (FarMotorToLandingGearMap.ContainsKey(MotorStatorsNearFarMap[motorStator]) &&
-                            FarMotorToLandingGearMap[MotorStatorsNearFarMap[motorStator]].Any(landingGear => landingGear.IsLocked == true))
+                        if (MotorStatorsNearFarMap.ContainsKey(motorStator) &&
+                            FarMotorToLandingGearMap.ContainsKey(MotorStatorsNearFarMap[motorStator]) &&
+                            (FarMotorToLandingGearMap[MotorStatorsNearFarMap[motorStator]].Any(landingGear => landingGear.IsLocked == true) ||
+                             MotorStatorsNearFarMap[motorStator].Angle != 0)
+                            )
                         {
 
                             if (VerboseMode)
                             {
-                                ReportError($"Unlocking MotorStator: {MotorStatorsNearFarMap[motorStator].CustomName} due to locked landing gear!\n", true, false);
+                                ReportError($"Unstowing MotorStator: {MotorStatorsNearFarMap[motorStator].CustomName}!\n", true, false);
                             }
 
                             // Iterate through the landing gears and make sure autolock is on!
                             foreach (IMyLandingGear landingGear in FarMotorToLandingGearMap[MotorStatorsNearFarMap[motorStator]])
                             {
                                 landingGear.AutoLock = false;
+                                landingGear.Unlock();
                             }
 
                             if (VerboseMode)
                             {
-                                ReportError($"AutoLocked Disabled for {FarMotorToLandingGearMap.Count} IMyLandingGear!\n", true, false);
+                                ReportError($"AutoLock Disabled for {FarMotorToLandingGearMap.Count} IMyLandingGear! Gears unlocked!\n", true, false);
                             }
 
                             try
@@ -536,33 +576,37 @@ namespace IngameScript
                                 switch (this.MotorStatorDiscriminator)
                                 {
                                     case MotorStatorTypeEnum.Hinge:
+                                        MotorStatorsNearFarMap[motorStator].RotorLock = false;
+                                        MotorStatorsNearFarMap[motorStator].Displacement = 0;
 
-                                        if (!MotorStatorToStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].MoveNext())
+                                        if (!MotorStatorToUnStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].MoveNext())
                                         {
-                                            MotorStatorToStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].Reset();
+                                            MotorStatorToUnStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].Reset();
                                         }
                                         break;
 
                                     case MotorStatorTypeEnum.AdvancedRotor:
+                                        MotorStatorsNearFarMap[motorStator].RotorLock = false;
+                                        MotorStatorsNearFarMap[motorStator].Displacement = 0;
 
-                                        if (!MotorStatorToStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].MoveNext())
+                                        if (!MotorStatorToUnStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].MoveNext())
                                         {
-                                            MotorStatorToStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].Reset();
                                         }
                                         break;
 
                                     case MotorStatorTypeEnum.Rotor:
+                                        MotorStatorsNearFarMap[motorStator].RotorLock = false;
+                                        MotorStatorsNearFarMap[motorStator].Displacement = 0;
 
-                                        if (!MotorStatorToStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].MoveNext())
+                                        if (!MotorStatorToUnStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].MoveNext())
                                         {
-                                            MotorStatorToStowMovement2DEnumMap[MotorStatorsNearFarMap[motorStator]].Reset();
                                         }
                                         break;
                                 }
 
                                 if (VerboseMode)
                                 {
-                                    ReportError($"StowGuns ran MoveNext()!\n", true, false);
+                                    ReportError($"UnStowGuns ran MoveNext()!\n", true, false);
                                 }
                             }
                             catch (Exception ex)
@@ -575,7 +619,7 @@ namespace IngameScript
                 }
                 catch (Exception ex)
                 {
-                    ReportError($"Error in UnStowGuns while attempting to iterate MotorToLandingGearMap!\n{ex}", true, false);
+                    ReportError($"Error in UnStowGuns while attempting to iterate MotorToLandingGearMap!\n{ex}\n", true, false);
                 }
 
             }
@@ -583,7 +627,6 @@ namespace IngameScript
             {
                 ReportError($"Error in UnStowGuns!\n{ex}", true, false);
             }
-
         }
 
 
@@ -598,10 +641,11 @@ namespace IngameScript
             {
                 try
                 {
-                    lastCurrentAngleDiff = Math.Abs(MotorStatorToLastAngleMap[motorStator] - motorStator.Angle);
+                    // Calculate the lastCurrentAngleDiff, if we have a past angle.
+                    lastCurrentAngleDiff = MotorStatorToLastAngleMap.ContainsKey(motorStator) ? (Math.Abs(MotorStatorToLastAngleMap[motorStator] - motorStator.Angle)) : 0;
 
                     // Check if the rotor might be stuck (compare against the previous angle)
-                    if (MotorStatorToLastAngleMap.ContainsKey(motorStator) && (lastCurrentAngleDiff < 0.01))
+                    if (MotorStatorToLastAngleMap.ContainsKey(motorStator))
                     {
                         if (reverseAfterStop)
                         {
@@ -614,13 +658,17 @@ namespace IngameScript
                             }
 
                             // This changes the desiredAngle to be the opposite of the current angle. AKA: "Reverse"
-                            desiredAngle = -1 * desiredAngle;
+
+                            if((lastCurrentAngleDiff < 0.01))
+                            {
+                                desiredAngle = -1 * desiredAngle;
+                            }
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    ReportError($"Error in HingeStowMovementEnumerator -> Checking Reverse Condition!\n{ex}");
+                    ReportError($"Error in HingeStowMovementEnumerator -> Checking Reverse Condition!\n{ex}", true, false);
                 }
 
 
@@ -695,9 +743,8 @@ namespace IngameScript
 
             while (true)
             {
-
                 // Next: Check if that angle is the desired angle.
-                if (motorStator.Angle != 0)
+                if (motorStator.Angle != 0 || Math.Abs(motorStator.Angle) - 0 < 2)
                 {
                     motorStator.RotorLock = false;
 
@@ -707,7 +754,7 @@ namespace IngameScript
                     {
                         if (VerboseMode)
                         {
-                            ReportError("HingeStowMovementEnumerator returning true for:\n" +
+                            ReportError("UnStowMovementEnumerator returning true for:\n" +
                                     "-----\n" +
                                     $"{motorStator.CustomName}\n" +
                                     $"angle: {motorStator.Angle}\n" +
@@ -718,7 +765,6 @@ namespace IngameScript
                                     $"ROTATE Command sent!\n" +
                                     $"-----\n", false, false);
                         }
-
                     }
                 }
                 else
@@ -726,7 +772,7 @@ namespace IngameScript
                     if (VerboseMode && (MotorStatorToLastAngleMap.ContainsKey(motorStator)))
                     {
                         // Case where the current angle is the desiredAngle
-                        ReportError("HingeStowMovementEnumerator returning false for:\n" +
+                        ReportError("UnStowMovementEnumerator returning false for:\n" +
                             "-----\n" +
                             $"{motorStator.CustomName}\n" +
                             $"angle: {motorStator.Angle}\n" +
@@ -738,7 +784,11 @@ namespace IngameScript
                             $"-----\n", false, false);
                     }
 
-                    motorStator.RotorLock = true;
+                    motorStator.RotorLock = false;
+                    motorStator.LowerLimitDeg = float.MinValue;
+                    motorStator.UpperLimitDeg = float.MaxValue;
+                    motorStator.TargetVelocityRPM = 0;
+
                     yield return false;
                 }
 
@@ -856,6 +906,12 @@ namespace IngameScript
         private void AssignMotorStatorOptions(IMyMotorStator motorStator)
         {
             // Assign Stator-Specific options here
+
+            motorStator.Displacement = float.MaxValue;
+            motorStator.Torque = float.MaxValue;
+            motorStator.BrakingTorque = float.MaxValue;
+            motorStator.LowerLimitDeg = float.MaxValue;
+            motorStator.UpperLimitDeg = float.MaxValue;
         }
 
         private void AssignCTCOptions(IMyTurretControlBlock ctc)
@@ -999,7 +1055,8 @@ namespace IngameScript
                     // Assign the CustomName of the 'Near' MotorStator
                     MotorStatorsNear[i].CustomName = autoAssign ? MotorStatorsNear[i].DefinitionDisplayNameText + $" {MotorStatorTag}-{i}-NEAR" : (MotorStatorsNear[i].CustomName.Replace(MotorStatorTag, $"{MotorStatorTag}-{i}-NEAR"));
 
-                } catch (Exception ex)
+                }
+                catch (Exception ex)
                 {
                     ReportError($"Error when assigning Near MotorStator names!\n{ex}", true, false);
                 }
@@ -1018,7 +1075,8 @@ namespace IngameScript
                         // Assign the CustomName of the 'Near' MotorStator
                         MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName = autoAssign ? MotorStatorsNearFarMap[MotorStatorsNear[i]].DefinitionDisplayNameText + $" {MotorStatorTag}-{i}-FAR" : (MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName.Replace(MotorStatorTag, $"{MotorStatorTag}-{i}-FAR"));
                     }
-                } catch (Exception ex)
+                }
+                catch (Exception ex)
                 {
                     ReportError($"Error when assigning Far MotorStator names!\n{ex}", true, false);
                 }
@@ -1079,13 +1137,13 @@ namespace IngameScript
                     farStatorListIter = new List<IMyMotorStator>();
 
                     // Add filters to farStators here
-                    GridTerminalSystem.GetBlocksOfType<IMyMotorStator>(farStatorListIter, (farStatorCandidate) => 
+                    GridTerminalSystem.GetBlocksOfType<IMyMotorStator>(farStatorListIter, (farStatorCandidate) =>
                     nearStator.TopGrid.EntityId == farStatorCandidate.CubeGrid.EntityId &&
                     nearStator.IsWorking &&
                     farStatorCandidate.IsWorking
                     );
 
-                    if(farStatorListIter.Count > 0)
+                    if (farStatorListIter.Count > 0)
                     {
                         if (VerboseMode)
                         {
@@ -1093,7 +1151,8 @@ namespace IngameScript
                         }
 
                         this.MotorStatorsNearFarMap.Add(nearStator, farStatorListIter.First());
-                    } else
+                    }
+                    else
                     {
                         if (VerboseMode)
                         {
@@ -1107,7 +1166,8 @@ namespace IngameScript
                     ReportError($"AssociateNearFarMotorStators populated MotorStatorsNearFarMap with {MotorStatorsNearFarMap.Count} entries!\n", true, false);
                 }
 
-            } catch (Exception ex)
+            }
+            catch (Exception ex)
             {
                 ReportError($"Error in AssociateNearFarMotorStators!\n{ex}\n", true, false);
             }
@@ -1131,7 +1191,7 @@ namespace IngameScript
                         ReportError($"AssociateMotorStatorsAndCameras: Associating list of {CameraListIter.Count} NEAR entries with {MotorStatorsNear[i].CustomName}\n", true, false);
                     }
 
-                    if(CameraListIter.Count == 0)
+                    if (CameraListIter.Count == 0)
                     {
                         MotorToCameraMap.Add(MotorStatorsNear[i], new List<IMyCameraBlock>());
                     }
@@ -1215,8 +1275,8 @@ namespace IngameScript
                         MotorStatorToStowMovement1DEnumMap.Add(motorStator, StowMovementEnumerator(motorStator, StowArc, 5, true));
                         MotorStatorToUnStowMovement1DEnumMap.Add(motorStator, UnStowMovementEnumerator(motorStator, 5, true));
 
-                        MotorStatorToStowMovement2DEnumMap.Add(motorStator, StowMovementEnumerator(MotorStatorsNearFarMap[motorStator], StowArc, 5, true));
-                        MotorStatorToUnStowMovement2DEnumMap.Add(motorStator, UnStowMovementEnumerator(MotorStatorsNearFarMap[motorStator], 5, true));
+                        MotorStatorToStowMovement2DEnumMap.Add(MotorStatorsNearFarMap[motorStator], StowMovementEnumerator(MotorStatorsNearFarMap[motorStator], StowArc, 5, true));
+                        MotorStatorToUnStowMovement2DEnumMap.Add(MotorStatorsNearFarMap[motorStator], UnStowMovementEnumerator(MotorStatorsNearFarMap[motorStator], 5, true));
                         break;
 
                     case MotorStatorDimensionEnum.ElevationAndAzimuth:
@@ -1339,7 +1399,8 @@ namespace IngameScript
                                 FarCTCToMotorMap.ElementAt(i).Key.AzimuthRotor = FarCTCToMotorMap[NearCTCToMotorMap.ElementAt(i).Key];
                                 break;
                         }
-                    } catch (Exception ex)
+                    }
+                    catch (Exception ex)
                     {
                         ReportError($"Error in CTCSetupStage2 -> Rotor Assignment!\n{ex}", true, false);
                     }
@@ -1348,7 +1409,9 @@ namespace IngameScript
                     try
                     {
                         AssignCTCOptions(NearCTCToMotorMap.ElementAt(i).Key);
-                    } catch(Exception ex)
+
+                    }
+                    catch (Exception ex)
                     {
                         ReportError($"Error in CTCSetupStage2 -> AssignCTCOptions!\n{ex}", true, false);
                     }
@@ -1356,6 +1419,8 @@ namespace IngameScript
                     try
                     {
                         AssignMotorStatorOptions(NearCTCToMotorMap.ElementAt(i).Value);
+                        AssignMotorStatorOptions(MotorStatorsNearFarMap[NearCTCToMotorMap.ElementAt(i).Value]);
+
                     }
                     catch (Exception ex)
                     {
