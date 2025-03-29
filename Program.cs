@@ -52,18 +52,18 @@ namespace IngameScript
 
         // CTC Options
         public float TargetingRange = float.MaxValue;
-        public float AngleDeviation = 0.25f;
+        public float AngleDeviation = 0.1f;
 
         public float StowArc = 180f;
 
-        public float MotorStatorTorque = 20000000f;
-        public float MotorStatorBrakingTorque = 20000000f;
+        public float MotorStatorTorque = 28000000f;
+        public float MotorStatorBrakingTorque = 28000000f;
 
         public float StowDisplacement = float.MaxValue;
         public float UnStowDisplacement = float.MaxValue;
 
-        public float AzVelocityScalar = 4f;
-        public float ElVelocityScalar = 4f;
+        public float AzVelocityScalar = 3f;
+        public float ElVelocityScalar = 3f;
 
         // ImpedenceDetectionThreshold: the degrees of angle used to determine if a rotor has 'stopped' or is stuck. This is the value compared against the difference between a MotorStator's last angle and current angle.
         // StopAngleTolerance: this is the 'width' of tolerance that is acceptable for a MotorStator to 'stop', since we will rarely land directly on any given angle. Determines the +/- of 'good enough' to determine we've reached an angle.
@@ -83,7 +83,12 @@ namespace IngameScript
         private string MergeBlockTag = "[PICMERGE]";
         private string CameraTag = "[PICCAM]";
 
-        private List<IMyTurretControlBlock> TurretControllers;
+        private List<IMyTurretControlBlock> CustomTurretControllers;
+
+        private List<MyDefinitionId> WCStaticWeapons;
+        private List<MyDefinitionId> WCTurretWeapons;
+        private List<IMyTerminalBlock> WCStaticWeaponsTB;
+        private List<IMyTerminalBlock> WCTurretWeaponsTB;
 
         // The 'near' MotorStators are the MotorStators immediately placed on the local cubegrid.
         // The 'far' MotorStators are the MotorStators place on top of the 'near' stators.
@@ -109,6 +114,8 @@ namespace IngameScript
 
         private Dictionary<IMyMotorStator, IEnumerator<bool>> MotorStatorToStowMovement2DEnumMap;
         private Dictionary<IMyMotorStator, IEnumerator<bool>> MotorStatorToUnStowMovement2DEnumMap;
+
+        private IEnumerator<bool> CheckShipSystemsEnum;
 
         // Iterating lists: By "Iterating" we mean "Lists intended to be used in loops". Declaring these once and re-using them is performant!
 
@@ -139,7 +146,32 @@ namespace IngameScript
             Echo($"Picarl's CTC Setup Script Started INIT at {DateTime.Now.ToLongTimeString()}\n");
             // Init WCPBAPI
             WCAPI = new WcPbApi();
-            WCAPI.Activate(Me);
+
+            try
+            {
+                while (!WCAPI.Activate(Me))
+                {
+                    try
+                    {
+                        WCAPI = new WcPbApi();
+                        WCAPI.Activate(Me);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (VerboseMode)
+                        {
+                            ReportError($"Exception when initializing Weaponcore, Inner Loop!\n(This might be normal if the game just loaded.)\n{ex}\n", true, false);
+                        }
+                    }
+
+                }
+            } catch (Exception ex)
+            {
+                if (VerboseMode)
+                {
+                    ReportError($"Exception when initializing Weaponcore, Outer Loop!\n(This might be normal if the game just loaded.)\n{ex}\n",true,false);
+                }
+            }
 
             try
             {
@@ -620,7 +652,7 @@ namespace IngameScript
                             ReportError($"UnStow MotorStatorsNear Iteration: {motorStator.CustomName}\n", true, false);
                         }
 
-                        motorStator.RotorLock = false;
+                        AssignMotorStatorOptions(motorStator, false);
 
                         // verbose output for NEAR guard
                         if (VerboseMode)
@@ -815,7 +847,159 @@ namespace IngameScript
             }
         }
 
+        public IEnumerator<bool> CheckShipSystems()
+        {
+            bool firstRun = true;
 
+            while (true)
+            {
+                if (firstRun)
+                {
+                    CheckWeaponPower(true);
+                    yield return true;
+                    CheckCTCPower(true);
+                    yield return true;
+                    CheckHingePower(true);
+                    yield return true;
+                    firstRun = false;
+                }
+                CheckWeaponPower(true);
+                yield return true;
+                CheckCTCPower(!StowingGuns);
+                yield return true;
+                CheckHingePower(true);
+                yield return true;
+            }
+        }
+
+        public bool CheckCTCPower(bool state = true)
+        {
+            try
+            {
+                foreach (IMyTurretControlBlock ctc in this.CustomTurretControllers)
+                {
+                    ctc.Enabled = state;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (VerboseMode)
+                {
+                    ReportError($"Error in CheckCTCPower!\n{ex}\n", true, false);
+                }
+                return false;
+            }
+            return true;
+        }
+
+        public bool CheckHingePower(bool state = true)
+        {
+            try
+            {
+                foreach (IMyMotorStator motorStator in this.MotorStatorsNear)
+                {
+                    motorStator.Enabled = state;
+                }
+
+                foreach (IMyMotorStator motorStator in this.MotorStatorsNearFarMap.Values)
+                {
+                    motorStator.Enabled = state;
+                }
+            } catch (Exception ex)
+            {
+                if (VerboseMode)
+                {
+                    ReportError($"Error in CheckHingePower!\n{ex}\n", true, false);
+                }
+                return false;
+            }
+            return true;
+        }
+
+        public bool CheckWeaponPower(bool state = true)
+        {
+            foreach(IMyTerminalBlock weapon in WCStaticWeaponsTB.Union(WCTurretWeaponsTB))
+            {
+                try
+                {
+                    weapon.ApplyAction("OnOff_On");
+                }
+                catch (Exception ex)
+                {
+                    if (VerboseMode)
+                    {
+                        ReportError($"Error in CheckWeaponPower!\n{ex}\n",true,false);
+                    }
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public bool CheckCTCPower()
+        {
+            foreach (IMyTurretControlBlock ctc in CustomTurretControllers)
+            {
+                try
+                {
+                    if (StowingGuns)
+                    {
+                        continue;
+                    }
+                    else
+                    {
+                        ctc.ApplyAction("OnOff_On");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (VerboseMode)
+                    {
+                        ReportError($"Error in CheckCTCPower!\n{ex}\n", true, false);
+                    }
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public bool SetupWeaponcoreLists()
+        {
+            try
+            {
+                WCStaticWeapons = new List<MyDefinitionId>();
+                WCTurretWeapons = new List<MyDefinitionId>();
+                WCStaticWeaponsTB = new List<IMyTerminalBlock>();
+                WCTurretWeaponsTB = new List<IMyTerminalBlock>();
+
+                WCAPI.GetAllCoreStaticLaunchers(WCStaticWeapons);
+                WCAPI.GetAllCoreTurrets(WCTurretWeapons);
+
+                GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(WCStaticWeaponsTB, (myTerminalBlock) =>
+                {
+                    return WCStaticWeapons.Any(defId => defId.SubtypeName.Equals(myTerminalBlock.BlockDefinition.SubtypeName));
+                });
+
+                GridTerminalSystem.GetBlocksOfType<IMyTerminalBlock>(WCTurretWeaponsTB, (myTerminalBlock) =>
+                {
+                    return WCTurretWeapons.Any(defId => defId.SubtypeName.Equals(myTerminalBlock.BlockDefinition.SubtypeName));
+                });
+
+                if (VerboseMode)
+                {
+                    ReportError($"SetupWeaponcoreLists:\n" +
+                        $"Found {WCStaticWeapons.Count} static weapons.\n" +
+                        $"Found {WCTurretWeapons.Count} turret weapons.\n", true, false);
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ReportError($"Error in SetupWeaponcoreLists!\n{ex}\n",true,true);
+                return false;
+            }
+        }
         // Hinge Stow movement will move the hinge to the desiredAngle, and if it stops or hits an obstruction - it will reverse.
         // Returns 'false' until it reaches desired angle.
         public IEnumerator<bool> StowMovementEnumerator(IMyMotorStator motorStator, float desiredAngle, float velocity, float impedenceDetectionThreshold, float stopAngleTolerance, bool reverseAfterStop = false)
@@ -1006,10 +1190,10 @@ namespace IngameScript
             {
                 if (resetAll)
                 {
-                    GridTerminalSystem.GetBlocksOfType<IMyTurretControlBlock>(this.TurretControllers, (ctcBlock) => ctcBlock.IsSameConstructAs(Me));
+                    GridTerminalSystem.GetBlocksOfType<IMyTurretControlBlock>(this.CustomTurretControllers, (ctcBlock) => ctcBlock.IsSameConstructAs(Me));
                 }
 
-                foreach (IMyTurretControlBlock ctc in this.TurretControllers)
+                foreach (IMyTurretControlBlock ctc in this.CustomTurretControllers)
                 {
                     ctc.CustomName = ctc.DefinitionDisplayNameText + (counter == 0 ? "" : $" {counter}");
                     counter++;
@@ -1058,17 +1242,20 @@ namespace IngameScript
                     CameraList = new List<IMyCameraBlock>();
                     counter = 0;
 
-                    GridTerminalSystem.GetBlocksOfType<IMyCameraBlock>(CameraList, (cameraBlock) => cameraBlock.CubeGrid.IsSameConstructAs(motorStator.TopGrid));
-
-                    if (resetAll)
+                    if(motorStator.TopGrid != null)
                     {
-                        GridTerminalSystem.GetBlocksOfType<IMyCameraBlock>(CameraList, (cameraBlock) => cameraBlock.IsSameConstructAs(Me));
-                    }
+                        GridTerminalSystem.GetBlocksOfType<IMyCameraBlock>(CameraList, (cameraBlock) => cameraBlock.CubeGrid.IsSameConstructAs(motorStator.TopGrid));
 
-                    foreach (IMyCameraBlock cameraBlock in CameraList)
-                    {
-                        cameraBlock.CustomName = cameraBlock.DefinitionDisplayNameText + (counter == 0 ? "" : $" {counter}");
-                        counter++;
+                        if (resetAll)
+                        {
+                            GridTerminalSystem.GetBlocksOfType<IMyCameraBlock>(CameraList, (cameraBlock) => cameraBlock.IsSameConstructAs(Me));
+                        }
+
+                        foreach (IMyCameraBlock cameraBlock in CameraList)
+                        {
+                            cameraBlock.CustomName = cameraBlock.DefinitionDisplayNameText + (counter == 0 ? "" : $" {counter}");
+                            counter++;
+                        }
                     }
                 }
             }
@@ -1080,9 +1267,34 @@ namespace IngameScript
 
         private void StandbyForWC()
         {
-            while (!WCAPI.Activate(Me))
+            // Init WCPBAPI
+            WCAPI = new WcPbApi();
+
+            try
             {
-                WCAPI.Activate(Me);
+                while (!WCAPI.Activate(Me))
+                {
+                    try
+                    {
+                        WCAPI = new WcPbApi();
+                        WCAPI.Activate(Me);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (VerboseMode)
+                        {
+                            ReportError($"Exception when initializing Weaponcore, Inner Loop!\n(This might be normal if the game just loaded.)\n{ex}\n", true, false);
+                        }
+                    }
+
+                }
+            }
+            catch (Exception ex)
+            {
+                if (VerboseMode)
+                {
+                    ReportError($"Exception when initializing Weaponcore, Outer Loop!\n(This might be normal if the game just loaded.)\n{ex}\n", true, false);
+                }
             }
         }
 
@@ -1202,17 +1414,17 @@ namespace IngameScript
             // Setup CustomName Naming
             try
             {
-                for (int i = 0; i < TurretControllers.Count; i++)
+                for (int i = 0; i < CustomTurretControllers.Count; i++)
                 {
                     //Echo($"Found Controller {i} with CustomName {TurretControllerList[i].CustomName}");
 
                     // We use '-' characters to designate a controller, and will use the same integer (ex: [PICCTC-1]) to associate pieces of equipment [PICMOTOR-1].
-                    if (TurretControllers[i].CustomName.Contains(CTCTag + "-"))
+                    if (CustomTurretControllers[i].CustomName.Contains(CTCTag + "-"))
                     {
-                        TurretControllers[i].CustomName = "Custom Turret Controller " + CTCTag;
+                        CustomTurretControllers[i].CustomName = "Custom Turret Controller " + CTCTag;
                     }
 
-                    TurretControllers[i].CustomName = autoAssign ? TurretControllers[i].DefinitionDisplayNameText + $" {CTCTag}-{i}" : TurretControllers[i].CustomName.Replace(CTCTag, $"{CTCTag}-{i}");
+                    CustomTurretControllers[i].CustomName = autoAssign ? CustomTurretControllers[i].DefinitionDisplayNameText + $" {CTCTag}-{i}" : CustomTurretControllers[i].CustomName.Replace(CTCTag, $"{CTCTag}-{i}");
                 }
             }
             catch (Exception ex)
@@ -1274,7 +1486,7 @@ namespace IngameScript
             if (VerboseMode)
             {
                 ReportError($"AssociateCTCsToMotorStators input counters, pre-completion:\n" +
-                    $"TurretControllers:{TurretControllers.Count}\n" +
+                    $"TurretControllers:{CustomTurretControllers.Count}\n" +
                     $"MotorStatorsNear:{MotorStatorsNear.Count}\n"
                     , true, false);
             }
@@ -1287,75 +1499,75 @@ namespace IngameScript
                     switch (MotorStatorDimensions)
                     {
                         case MotorStatorDimensionEnum.Azimuth:
-                            NearCTCToMotorMap.Add(TurretControllers[i], MotorStatorsNear[i]);
+                            NearCTCToMotorMap.Add(CustomTurretControllers[i], MotorStatorsNear[i]);
 
                             if (VerboseMode)
                             {
-                                ReportError($"AssociateCTCsToMotorStators: Associated CTC {TurretControllers[i].CustomName} to MotorStator {MotorStatorsNear[i].CustomName}\n",true,false);
+                                ReportError($"AssociateCTCsToMotorStators: Associated CTC {CustomTurretControllers[i].CustomName} to MotorStator {MotorStatorsNear[i].CustomName}\n",true,false);
                             }
 
                             break;
                         case MotorStatorDimensionEnum.Elevation:
-                            NearCTCToMotorMap.Add(TurretControllers[i], MotorStatorsNear[i]);
+                            NearCTCToMotorMap.Add(CustomTurretControllers[i], MotorStatorsNear[i]);
 
                             if (VerboseMode)
                             {
-                                ReportError($"AssociateCTCsToMotorStators: Associated CTC {TurretControllers[i].CustomName} to MotorStator {MotorStatorsNear[i].CustomName}\n", true, false);
+                                ReportError($"AssociateCTCsToMotorStators: Associated CTC {CustomTurretControllers[i].CustomName} to MotorStator {MotorStatorsNear[i].CustomName}\n", true, false);
                             }
 
                             break;
 
                         case MotorStatorDimensionEnum.ElevationAndAzimuth:
 
-                            NearCTCToMotorMap.Add(TurretControllers[i], MotorStatorsNear[i]);
+                            NearCTCToMotorMap.Add(CustomTurretControllers[i], MotorStatorsNear[i]);
 
                             if (VerboseMode)
                             {
-                                ReportError($"AssociateCTCsToMotorStators: Associated CTC {TurretControllers[i].CustomName} to NEAR MotorStator {MotorStatorsNear[i].CustomName}\n", true, false);
+                                ReportError($"AssociateCTCsToMotorStators: Associated CTC {CustomTurretControllers[i].CustomName} to NEAR MotorStator {MotorStatorsNear[i].CustomName}\n", true, false);
                             }
 
                             try
                             {
                                 if (MotorStatorsNearFarMap.ContainsKey(MotorStatorsNear[i]))
                                 {
-                                    FarCTCToMotorMap.Add(TurretControllers[i], MotorStatorsNearFarMap[MotorStatorsNear[i]]);
+                                    FarCTCToMotorMap.Add(CustomTurretControllers[i], MotorStatorsNearFarMap[MotorStatorsNear[i]]);
 
                                     if (VerboseMode)
                                     {
-                                        ReportError($"AssociateCTCsToMotorStators: Associated CTC {TurretControllers[i].CustomName} to FAR MotorStator {MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName}\n", true, false);
+                                        ReportError($"AssociateCTCsToMotorStators: Associated CTC {CustomTurretControllers[i].CustomName} to FAR MotorStator {MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName}\n", true, false);
                                     }
                                 }
                             } catch(Exception ex)
                             {
-                                ReportError($"AssociateCTCsToMotorStators error: Unable to associate {TurretControllers[i].CustomName} and {TurretControllers[i].CustomName}/{(MotorStatorsNearFarMap.ContainsKey(MotorStatorsNear[i]) ? MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName : "//NO FAR MOTORSTATOR DETECTED!//")}\n{ex}\n",true,false);
+                                ReportError($"AssociateCTCsToMotorStators error: Unable to associate {CustomTurretControllers[i].CustomName} and {CustomTurretControllers[i].CustomName}/{(MotorStatorsNearFarMap.ContainsKey(MotorStatorsNear[i]) ? MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName : "//NO FAR MOTORSTATOR DETECTED!//")}\n{ex}\n",true,false);
                             }
                             break;
 
                         case MotorStatorDimensionEnum.AzimuthAndElevation:
 
 
-                            NearCTCToMotorMap.Add(TurretControllers[i], MotorStatorsNear[i]);
+                            NearCTCToMotorMap.Add(CustomTurretControllers[i], MotorStatorsNear[i]);
 
                             if (VerboseMode)
                             {
-                                ReportError($"AssociateCTCsToMotorStators: Associated CTC {TurretControllers[i].CustomName} to NEAR MotorStator {MotorStatorsNear[i].CustomName}\n", true, false);
+                                ReportError($"AssociateCTCsToMotorStators: Associated CTC {CustomTurretControllers[i].CustomName} to NEAR MotorStator {MotorStatorsNear[i].CustomName}\n", true, false);
                             }
 
                             try
                             {
                                 if (MotorStatorsNearFarMap.ContainsKey(MotorStatorsNear[i]))
                                 {
-                                    FarCTCToMotorMap.Add(TurretControllers[i], MotorStatorsNearFarMap[MotorStatorsNear[i]]);
+                                    FarCTCToMotorMap.Add(CustomTurretControllers[i], MotorStatorsNearFarMap[MotorStatorsNear[i]]);
 
                                     if (VerboseMode)
                                     {
-                                        ReportError($"AssociateCTCsToMotorStators: Associated CTC {TurretControllers[i].CustomName} to FAR MotorStator {MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName}\n", true, false);
+                                        ReportError($"AssociateCTCsToMotorStators: Associated CTC {CustomTurretControllers[i].CustomName} to FAR MotorStator {MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName}\n", true, false);
                                     }
                                 }
                             }
                             catch (Exception ex)
                             {
-                                ReportError($"AssociateCTCsToMotorStators error: Unable to associate {TurretControllers[i].CustomName} and {TurretControllers[i].CustomName}/{(MotorStatorsNearFarMap.ContainsKey(MotorStatorsNear[i]) ? MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName : "//NO FAR MOTORSTATOR DETECTED!//")}\n{ex}\n", true, false);
+                                ReportError($"AssociateCTCsToMotorStators error: Unable to associate {CustomTurretControllers[i].CustomName} and {CustomTurretControllers[i].CustomName}/{(MotorStatorsNearFarMap.ContainsKey(MotorStatorsNear[i]) ? MotorStatorsNearFarMap[MotorStatorsNear[i]].CustomName : "//NO FAR MOTORSTATOR DETECTED!//")}\n{ex}\n", true, false);
                             }
                             break;
                     }
@@ -1393,6 +1605,7 @@ namespace IngameScript
 
                     // Add filters to farStators here
                     GridTerminalSystem.GetBlocksOfType<IMyMotorStator>(farStatorListIter, (farStatorCandidate) =>
+                    nearStator.TopGrid != null &&
                     nearStator.TopGrid.EntityId == farStatorCandidate.CubeGrid.EntityId &&
                     nearStator.IsWorking &&
                     farStatorCandidate.IsWorking
@@ -1439,7 +1652,7 @@ namespace IngameScript
                     // First: We attempt to get the cameras that exist on the near subgrid
                     CameraListIter = new List<IMyCameraBlock>();
 
-                    GridTerminalSystem.GetBlocksOfType<IMyCameraBlock>(CameraListIter, (cameraBlock) => cameraBlock.CubeGrid.EntityId == (MotorStatorsNear[i].TopGrid.EntityId));
+                    GridTerminalSystem.GetBlocksOfType<IMyCameraBlock>(CameraListIter, (cameraBlock) => MotorStatorsNear[i].TopGrid != null && cameraBlock.CubeGrid.EntityId == (MotorStatorsNear[i].TopGrid.EntityId));
 
                     if (VerboseMode)
                     {
@@ -1469,7 +1682,7 @@ namespace IngameScript
                     // Begin by checking if there is a 'far' grid associated with the current 'near' rotor.
                     if (MotorStatorsNearFarMap.ContainsKey(MotorStatorsNear[i]))
                     {
-                        GridTerminalSystem.GetBlocksOfType<IMyCameraBlock>(CameraListIter, (cameraBlock) => cameraBlock.CubeGrid.EntityId == (MotorStatorsNearFarMap[MotorStatorsNear[i]].TopGrid.EntityId));
+                        GridTerminalSystem.GetBlocksOfType<IMyCameraBlock>(CameraListIter, (cameraBlock) => MotorStatorsNear[i].TopGrid != null && cameraBlock.CubeGrid.EntityId == (MotorStatorsNearFarMap[MotorStatorsNear[i]].TopGrid.EntityId));
 
                         if (VerboseMode)
                         {
@@ -1578,21 +1791,27 @@ namespace IngameScript
             {
                 try
                 {
-                    ReportError($"AssociateMotorStatorsAndLandingGears Iteration: {MotorStatorsNear[i].CustomName}\n", true, false);
+                    if (VerboseMode)
+                    {
+                        ReportError($"AssociateMotorStatorsAndLandingGears Iteration: {MotorStatorsNear[i].CustomName}\n", true, false);
+                    }
 
                     NearMotorStatorLandingGearListIter = new List<IMyLandingGear>();
                     FarMotorStatorLandingGearListIter = new List<IMyLandingGear>();
 
-                    GridTerminalSystem.GetBlocksOfType<IMyLandingGear>(NearMotorStatorLandingGearListIter, (landingGear) => landingGear.CubeGrid.EntityId == (MotorStatorsNear[i].TopGrid.EntityId));
+                    GridTerminalSystem.GetBlocksOfType<IMyLandingGear>(NearMotorStatorLandingGearListIter, (landingGear) => MotorStatorsNear[i].TopGrid != null && landingGear.CubeGrid.EntityId == (MotorStatorsNear[i].TopGrid.EntityId));
 
                     if (MotorStatorsNearFarMap.ContainsKey(MotorStatorsNear[i]))
                     {
-                        GridTerminalSystem.GetBlocksOfType<IMyLandingGear>(FarMotorStatorLandingGearListIter, (landingGear) => landingGear.CubeGrid.EntityId == (MotorStatorsNearFarMap[MotorStatorsNear[i]].TopGrid.EntityId));
+                        GridTerminalSystem.GetBlocksOfType<IMyLandingGear>(FarMotorStatorLandingGearListIter, (landingGear) => MotorStatorsNearFarMap.ContainsKey(MotorStatorsNear[i]) && MotorStatorsNearFarMap[MotorStatorsNear[i]].TopGrid != null && landingGear.CubeGrid.EntityId == (MotorStatorsNearFarMap[MotorStatorsNear[i]].TopGrid.EntityId));
                     }
 
-                    ReportError($"AssociateMotorStatorsAndLandingGears: Found {NearMotorStatorLandingGearListIter.Count} NEAR Landing Gears!\n" +
+                    if (VerboseMode)
+                    {
+                        ReportError($"AssociateMotorStatorsAndLandingGears: Found {NearMotorStatorLandingGearListIter.Count} NEAR Landing Gears!\n" +
                                 $"AssociateMotorStatorsAndLandingGears: Found {FarMotorStatorLandingGearListIter.Count} FAR Landing Gears!\n"
                                 , true, false);
+                    }
 
                     foreach (IMyLandingGear landingGear in NearMotorStatorLandingGearListIter)
                     {
@@ -1749,7 +1968,7 @@ namespace IngameScript
                                     }
 
                                     nearCTCKVP.Key.AzimuthRotor = nearCTCKVP.Value;
-                                    nearCTCKVP.Key.ElevationRotor = FarCTCToMotorMap[nearCTCKVP.Key];
+                                    nearCTCKVP.Key.ElevationRotor = FarCTCToMotorMap.ContainsKey(nearCTCKVP.Key) ? FarCTCToMotorMap[nearCTCKVP.Key] : nearCTCKVP.Value; ;
                                 }
                                 catch (Exception ex)
                                 {
@@ -1774,7 +1993,7 @@ namespace IngameScript
                                     }
 
                                     nearCTCKVP.Key.ElevationRotor = nearCTCKVP.Value;
-                                    nearCTCKVP.Key.AzimuthRotor = FarCTCToMotorMap[nearCTCKVP.Key];
+                                    nearCTCKVP.Key.AzimuthRotor = FarCTCToMotorMap.ContainsKey(nearCTCKVP.Key) ? FarCTCToMotorMap[nearCTCKVP.Key] : nearCTCKVP.Value;
                                 }
                                 catch (Exception ex)
                                 {
@@ -1842,7 +2061,7 @@ namespace IngameScript
             StandbyForWC();
 
             // Instantiate Variables
-            TurretControllers = new List<IMyTurretControlBlock>();
+            CustomTurretControllers = new List<IMyTurretControlBlock>();
             MotorStatorsNear = new List<IMyMotorStator>();
             MergeBlocks = new List<IMyShipMergeBlock>();
             NearMotorStatorLandingGearListIter = new List<IMyLandingGear>();
@@ -1864,15 +2083,17 @@ namespace IngameScript
             MotorStatorToStowMovement2DEnumMap = new Dictionary<IMyMotorStator, IEnumerator<bool>>();
             MotorStatorToUnStowMovement2DEnumMap = new Dictionary<IMyMotorStator, IEnumerator<bool>>();
 
+            CheckShipSystemsEnum = CheckShipSystems();
+
             // Populate Lists of trivially-obtainable blocks
-            GridTerminalSystem.GetBlocksOfType<IMyTurretControlBlock>(TurretControllers, (ctcBlock) => autoAssign ? ctcBlock.IsSameConstructAs(Me) : ctcBlock.CustomName.Contains(CTCTag) && ctcBlock.IsSameConstructAs(Me));
+            GridTerminalSystem.GetBlocksOfType<IMyTurretControlBlock>(CustomTurretControllers, (ctcBlock) => autoAssign ? ctcBlock.IsSameConstructAs(Me) : ctcBlock.CustomName.Contains(CTCTag) && ctcBlock.IsSameConstructAs(Me));
             GridTerminalSystem.GetBlocksOfType<IMyMotorStator>(MotorStatorsNear, (motorBlock) => autoAssign ? motorBlock.CubeGrid.EntityId == Me.CubeGrid.EntityId : motorBlock.CustomName.Contains(MotorStatorTag) && motorBlock.CubeGrid.EntityId == Me.CubeGrid.EntityId);
             GridTerminalSystem.GetBlocksOfType<IMyShipMergeBlock>(MergeBlocks, (mergeBlock) => autoAssign ? mergeBlock.IsSameConstructAs(Me) : mergeBlock.CustomName.Contains(MotorStatorTag) && mergeBlock.CustomName.Contains(MergeBlockTag) && mergeBlock.IsSameConstructAs(Me));
 
             if (VerboseMode)
             {
                 ReportError($"List Counts:\n" +
-                    $"TurretControllers: {TurretControllers.Count}\n" +
+                    $"TurretControllers: {CustomTurretControllers.Count}\n" +
                     $"MotorStators: {MotorStatorsNear.Count}\n" +
                     $"MergeBlocks: {MergeBlocks.Count}\n",
                     true, false);
@@ -1883,9 +2104,9 @@ namespace IngameScript
             // An assumption that you have at one TurretController for each MotorStator.
             // You can have more TurretControllers, but we are assuming that setup will be ran on a meme-CTC grid.
             // TurretControllers >= MotorStators (Rotors,Adv. Rotors, Hinges)
-            if (TurretControllers.Count < MotorStatorsNear.Count)
+            if (CustomTurretControllers.Count < MotorStatorsNear.Count)
             {
-                ReportError($"Error in CTCSetupStage1:\nInvalid ratio of CTC's ({TurretControllers.Count}) to MotorStators ({MotorStatorsNear.Count})!\nNeed to have at least one CTC per MotorStator (Hinge, Rotor, etc)!", true, false);
+                ReportError($"Error in CTCSetupStage1:\nInvalid ratio of CTC's ({CustomTurretControllers.Count}) to MotorStators ({MotorStatorsNear.Count})!\nNeed to have at least one CTC per MotorStator (Hinge, Rotor, etc)!", true, false);
                 // Echo($"Error in CTCSetupStage1: Invalid ratio of CTC's ({TurretControllers.Count}) to MotorStators ({MotorStators.Count})!\nNeed to have at least one CTC per MotorStator (Hinge, Rotor, etc)!");
                 return;
             }

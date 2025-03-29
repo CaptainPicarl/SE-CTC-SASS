@@ -1,5 +1,27 @@
-﻿R e a d m e
+﻿Picarl's CTC SASS Readme
 -----------
 
-In this file you can include any instructions or other comments you want to have injected onto the 
-top of your final script. You can safely delete this file if you do not want any such comments.
+Picarl's CTC SASS is a script intended to simplify the setup, assignment, naming, and association of Hinges,Rotors,Advanced Rotors (Referred to as "MotorStators"), 
+and their associated CTC Blocks.
+
+This script supports, at a maximum, two axes.
+Meaning you can, at most, associate one Azimuth MotorStator and one Elevations MotorStator.
+
+This script relies on many assumptions.
+- You have at one TurretController for each MotorStator. An error will be thrown if not!
+- If you intend on using the STOW/UNSTOW functionality: You have a MagPlate/LandingGear on the subgrid
+
+Below is a list of arguments you can execute via the Programmable Block.
+
+SETUP - Iterates through MotorStators, determines if they are 'near' or 'far', names them, and associates them with an appropriately-named CTC.
+AUTOASSIGN - Automatically assigns the MotorStators and CTCs that it detects.
+RESET - Resets the names of CTC's and MotorStators that it detects matches the naming scheme used by CTC SASS.
+RESETALL - Resets the names of CTC's and MotorStators that it detects matches the naming scheme used by CTC SASS and are on the same grid, 
+regardless of whether or not they are currently named.
+STOW - Begins moving MotorStators until the script detects the associated Magplate/LandingGear locks, at which point the subgrid is considered 'stowed'.
+UNSTOW - Unlocks any detected Magplate/LandingGear locks, and moves the subgrids to the "Zero" position. At which point the subgrid is considered 'unstowed'.
+
+Notes:
+- I can't recall, at the moment, what my intention was between RESET and RESETALL. When in doubt: Use RESETALL.
+- AUTOASSIGN should be called automatically nowadays. Unless you change your grid / subgrids: You shouldn't need to run this. 
+- If you *do* change your grid / subgrids: I recommend using RESETALL followed by AUTOASSIGN.
